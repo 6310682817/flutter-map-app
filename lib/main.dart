@@ -19,9 +19,12 @@ import 'firebase_options.dart';
 // import 'package:intl/intl.dart';
 import 'package:move_to_background/move_to_background.dart';
 import 'src/menu.dart';
+import 'package:geolocator_apple/geolocator_apple.dart';
+import 'package:geolocator_android/geolocator_android.dart';
 import 'package:location/location.dart' as locat;
 
 StreamSubscription<Position>? positionStream;
+StreamSubscription<ServiceStatus>? serviceStatusStream;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -86,6 +89,7 @@ class _LoginPageState extends State<LoginPage> {
   @override
   void initState() {
     super.initState();
+    serviceStatusStream?.cancel();
     positionStream?.cancel();
   }
 
@@ -274,6 +278,7 @@ class _MapViewPageState extends State<MapViewPage> {
     _serviceEnabled = await _location.serviceEnabled();
     // _serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!_serviceEnabled) {
+      positionStream?.cancel();
       _serviceEnabled = await _location.requestService();
       if (!_serviceEnabled) {
         return true;
@@ -295,6 +300,24 @@ class _MapViewPageState extends State<MapViewPage> {
     while (unpermission) {
       unpermission = await check_permissions();
     }
+    runPositionStream();
+    serviceStatusStream = Geolocator.getServiceStatusStream()
+        .listen((ServiceStatus status) async {
+      print("----------------------------status");
+      print(status);
+
+      if (status == ServiceStatus.disabled) {
+        bool unpermission = await check_permissions();
+        while (unpermission) {
+          await positionStream?.cancel();
+          unpermission = await check_permissions();
+        }
+        runPositionStream();
+      }
+    });
+  }
+
+  void runPositionStream() {
     late LocationSettings locationSettings;
 
     if (defaultTargetPlatform == TargetPlatform.android) {
@@ -328,13 +351,11 @@ class _MapViewPageState extends State<MapViewPage> {
       );
     }
 
-    print("----------------------------------------------------1");
     DatabaseReference ref = FirebaseDatabase.instance.ref("location");
 
     positionStream =
         Geolocator.getPositionStream(locationSettings: locationSettings)
             .listen((Position? position) async {
-
       await ref.child("user$userid").set({
         "lat": position?.latitude,
         "lng": position?.longitude,
@@ -344,7 +365,6 @@ class _MapViewPageState extends State<MapViewPage> {
           ? 'Unknown'
           : '${position.latitude.toString()}, ${position.longitude.toString()}');
     });
-    // positionStream.
   }
 
   @override
